@@ -23,7 +23,7 @@ def build_from_path(in_dir, out_dir, encoder, num_workers=1):
 
 
 def _compute_spkEmbed(out_dir, wav_path, encoder):
-
+    print(wav_path)
     utt_id = os.path.basename(wav_path).rstrip(".wav")
     fpath = Path(wav_path)
     wav = preprocess_wav(fpath)
