@@ -40,7 +40,7 @@ def process(filename):
         fpath = os.path.join(ssl_dir, f"{i}.hdf5")
         f[i] = h5py.File(fpath, "a")
     '''
-    for i in range(args.min, args.max+1):
+    for i in range(68, 92+1, 4):
         mel_rs = utils.transform(mel, i)
         wav_rs = vocoder(mel_rs)[0][0].detach().cpu().numpy()
         _wav_rs = librosa.resample(wav_rs, orig_sr=hps.sampling_rate, target_sr=args.sr)

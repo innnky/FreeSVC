@@ -9,7 +9,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_list", type=str, default="./filelists/train.txt", help="path to train list")
     parser.add_argument("--val_list", type=str, default="./filelists/val.txt", help="path to val list")
     parser.add_argument("--test_list", type=str, default="./filelists/test.txt", help="path to test list")
-    parser.add_argument("--source_dir", type=str, default="./dataset/vctk-16k", help="path to source dir")
+    parser.add_argument("--source_dir", type=str, default="./dataset/32k", help="path to source dir")
     args = parser.parse_args()
     
     train = []
@@ -32,20 +32,20 @@ if __name__ == "__main__":
     with open(args.train_list, "w") as f:
         for fname in tqdm(train):
             speaker = fname[:4]
-            wavpath = os.path.join("DUMMY", speaker, fname)
+            wavpath = os.path.join(args.source_dir, speaker, fname)
             f.write(wavpath + "\n")
         
     print("Writing", args.val_list)
     with open(args.val_list, "w") as f:
         for fname in tqdm(val):
             speaker = fname[:4]
-            wavpath = os.path.join("DUMMY", speaker, fname)
+            wavpath = os.path.join(args.source_dir, speaker, fname)
             f.write(wavpath + "\n")
             
     print("Writing", args.test_list)
     with open(args.test_list, "w") as f:
         for fname in tqdm(test):
             speaker = fname[:4]
-            wavpath = os.path.join("DUMMY", speaker, fname)
+            wavpath = os.path.join(args.source_dir, speaker, fname)
             f.write(wavpath + "\n")
             

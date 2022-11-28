@@ -60,7 +60,8 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             c_filename = c_filename.replace("DUMMY", "dataset/wavlm")
             c = torch.load(c_filename).squeeze(0)
         else:
-            i = random.randint(68,92)
+            i = 68+4*random.randint(0,6)
+
             '''
             basename = os.path.basename(filename)[:-4]
             spkname = basename[:4]
@@ -74,6 +75,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             c = torch.load(c_filename).squeeze(0)
             
         lmin = min(c.size(-1), spec.size(-1))
+        assert abs(c.size(-1) - spec.size(-1)) < 2
         spec, c = spec[:, :lmin], c[:, :lmin]
         audio_norm = audio_norm[:, :lmin*self.hop_length]
         _spec, _c, _audio_norm = spec, c, audio_norm
