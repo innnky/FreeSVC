@@ -18,7 +18,7 @@ if __name__ == "__main__":
     idx = 0
     
     for speaker in tqdm(os.listdir(args.source_dir)):
-        wavs = os.listdir(os.path.join(args.source_dir, speaker))
+        wavs = [os.path.join(args.source_dir, speaker, i)for i in os.listdir(os.path.join(args.source_dir, speaker))]
         shuffle(wavs)
         train += wavs[2:-10]
         val += wavs[:2]
@@ -31,21 +31,18 @@ if __name__ == "__main__":
     print("Writing", args.train_list)
     with open(args.train_list, "w") as f:
         for fname in tqdm(train):
-            speaker = fname[:4]
-            wavpath = os.path.join(args.source_dir, speaker, fname)
+            wavpath = fname
             f.write(wavpath + "\n")
         
     print("Writing", args.val_list)
     with open(args.val_list, "w") as f:
         for fname in tqdm(val):
-            speaker = fname[:4]
-            wavpath = os.path.join(args.source_dir, speaker, fname)
+            wavpath = fname
             f.write(wavpath + "\n")
             
     print("Writing", args.test_list)
     with open(args.test_list, "w") as f:
         for fname in tqdm(test):
-            speaker = fname[:4]
-            wavpath = os.path.join(args.source_dir, speaker, fname)
+            wavpath = fname
             f.write(wavpath + "\n")
             

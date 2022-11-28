@@ -7,10 +7,9 @@ from scipy.io import wavfile
 from tqdm import tqdm
 
 
-def process(wav_name):
-    print(wav_name)
+def process(spkdir, wav_name):
     # speaker 's5', 'p280', 'p315' are excluded,
-    speaker = wav_name[:4]
+    speaker = spkdir.split("/")[-1]
     wav_path = os.path.join(args.in_dir, speaker, wav_name)
     if os.path.exists(wav_path) and '.wav' in wav_path:
         os.makedirs(os.path.join(args.out_dir1, speaker), exist_ok=True)
@@ -28,7 +27,6 @@ def process(wav_name):
         save_path1 = os.path.join(args.out_dir1, speaker, save_name)
         save_path2 = os.path.join(args.out_dir2, speaker, save_name)
         save_path3 = os.path.join(args.out_dir3, speaker, save_name)
-        print(save_path1)
         wavfile.write(
             save_path1,
             args.sr1,
@@ -57,12 +55,10 @@ if __name__ == "__main__":
     parser.add_argument("--out_dir3", type=str, default="./dataset/32k", help="path to target dir")
     args = parser.parse_args()
 
-    pool = Pool(processes=cpu_count())
-
     for speaker in os.listdir(args.in_dir):
         spk_dir = os.path.join(args.in_dir, speaker)
         if os.path.isdir(spk_dir):
             print(1)
-            for _ in tqdm(pool.imap_unordered(process, os.listdir(spk_dir))):
-                pass
+            for wavname in tqdm(os.listdir(spk_dir)):
+                process(spk_dir, wavname)
 
