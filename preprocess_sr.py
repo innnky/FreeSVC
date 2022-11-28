@@ -17,6 +17,7 @@ logging.getLogger('numba').setLevel(logging.WARNING)
 
 def process(filename):
     basename = os.path.basename(filename)
+    print(filename)
     speaker = filename.split("/")[-2]#basename[:4]
     wav_dir = os.path.join(args.wav_dir, speaker)
     ssl_dir = os.path.join(args.ssl_dir, speaker)
@@ -49,18 +50,17 @@ def process(filename):
         ssl_path = os.path.join(ssl_dir, basename.replace(".wav", f"_{i}.pt"))
         torch.save(c.cpu(), ssl_path)
         #print(wav_rs.size(), c.size())
-        wav_path = os.path.join(wav_dir, basename.replace(".wav", f"_{i}.wav"))
-        wavfile.write(
-                wav_path,
-                args.sr,
-                _wav_rs
-        )
+        # wav_path = os.path.join(wav_dir, basename.replace(".wav", f"_{i}.wav"))
+        # wavfile.write(
+        #         wav_path,
+        #         args.sr,
+        #         _wav_rs
+        # )
     '''
         f[i][basename[:-4]] = c.cpu()
     for i in range(args.min, args.max+1):
         f[i].close()
     '''
-        
 
 
 if __name__ == "__main__":
@@ -69,9 +69,9 @@ if __name__ == "__main__":
     parser.add_argument("--min", type=int, default=68, help="min")
     parser.add_argument("--max", type=int, default=92, help="max")
     parser.add_argument("--config", type=str, default="hifigan/config.json", help="path to config file")
-    parser.add_argument("--in_dir", type=str, default="dataset/vctk-22k", help="path to input dir")
-    parser.add_argument("--wav_dir", type=str, default="dataset/rs/wav", help="path to output wav dir")
-    parser.add_argument("--ssl_dir", type=str, default="dataset/rs/wavlm", help="path to output ssl dir")
+    parser.add_argument("--in_dir", type=str, default="dataset/22k", help="path to input dir")
+    parser.add_argument("--wav_dir", type=str, default="dataset/sr/wav", help="path to output wav dir")
+    parser.add_argument("--ssl_dir", type=str, default="dataset/sr/wavlm", help="path to output ssl dir")
     args = parser.parse_args()
 
     print("Loading WavLM for content...")

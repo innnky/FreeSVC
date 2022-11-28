@@ -13,14 +13,12 @@ import argparse
 
 
 def build_from_path(in_dir, out_dir, encoder, num_workers=1):
-    executor = ProcessPoolExecutor(max_workers=num_workers)
     futures = []
     wavfile_paths = glob.glob(os.path.join(in_dir, '*.wav'))
     wavfile_paths= sorted(wavfile_paths)
     for wav_path in wavfile_paths:
-        futures.append(executor.submit(
-            partial(_compute_spkEmbed, out_dir, wav_path, encoder)))
-    return [future.result() for future in tqdm(futures)]
+        futures.append(_compute_spkEmbed(out_dir, wav_path, encoder))
+    return [future for future in futures]
 
 
 
