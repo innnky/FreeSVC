@@ -1,5 +1,6 @@
 import os
 import argparse
+
 import torch
 import librosa
 import json
@@ -14,6 +15,37 @@ from wavlm import WavLM, WavLMConfig
 import logging
 logging.getLogger('numba').setLevel(logging.WARNING)
 
+import parselmouth
+import numpy as np
+
+def get_f0(path,p_len=None, f0_up_key=0):
+    x, _ = librosa.load(path, 16000)
+    if p_len is None:
+        p_len = x.shape[0]//320
+    else:
+        assert abs(p_len-x.shape[0]//320) < 2, (path, p_len, x.shape)
+    time_step = 320 / 16000 * 1000
+    f0_min = 50
+    f0_max = 1100
+    f0_mel_min = 1127 * np.log(1 + f0_min / 700)
+    f0_mel_max = 1127 * np.log(1 + f0_max / 700)
+
+    f0 = parselmouth.Sound(x, 16000).to_pitch_ac(
+        time_step=time_step / 1000, voicing_threshold=0.6,
+        pitch_floor=f0_min, pitch_ceiling=f0_max).selected_array['frequency']
+
+    pad_size=(p_len - len(f0) + 1) // 2
+    if(pad_size>0 or p_len - len(f0) - pad_size>0):
+        f0 = np.pad(f0,[[pad_size,p_len - len(f0) - pad_size]], mode='constant')
+
+    f0bak = f0.copy()
+    f0 *= pow(2, f0_up_key / 12)
+    f0_mel = 1127 * np.log(1 + f0 / 700)
+    f0_mel[f0_mel > 0] = (f0_mel[f0_mel > 0] - f0_mel_min) * 254 / (f0_mel_max - f0_mel_min) + 1
+    f0_mel[f0_mel <= 1] = 1
+    f0_mel[f0_mel > 255] = 255
+    f0_coarse = np.rint(f0_mel).astype(np.int)
+    return f0_coarse, f0bak
 
 def process(filename):
     basename = os.path.basename(filename)
@@ -56,12 +88,11 @@ def process(filename):
         #         args.sr,
         #         _wav_rs
         # )
-    '''
-        f[i][basename[:-4]] = c.cpu()
-    for i in range(args.min, args.max+1):
-        f[i].close()
-    '''
 
+    len = c.shape[-1]
+    cf0, f0 = get_f0(filename, len)
+    f0path = filename.replace("22k", "32k")+"f0.npy"
+    np.save(f0path, cf0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
