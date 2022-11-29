@@ -73,26 +73,30 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             c_filename = filename.replace(".wav", f"_{i}.pt")
             c_filename = c_filename.replace("dataset/32k", "dataset/sr/wavlm")
             c = torch.load(c_filename).squeeze(0)
-            
+
+        f0 = np.load(filename+"f0.npy")
+        f0 = torch.LongTensor(f0)
         lmin = min(c.size(-1), spec.size(-1))
         assert abs(c.size(-1) - spec.size(-1)) < 2
-        spec, c = spec[:, :lmin], c[:, :lmin]
+        spec, c, f0 = spec[:, :lmin], c[:, :lmin], f0[:lmin]
         audio_norm = audio_norm[:, :lmin*self.hop_length]
-        _spec, _c, _audio_norm = spec, c, audio_norm
+        _spec, _c, _audio_norm, _f0 = spec, c, audio_norm, f0
         while spec.size(-1) < self.spec_len:
             spec = torch.cat((spec, _spec), -1)
             c = torch.cat((c, _c), -1)
+            f0 = torch.cat((f0, _f0), -1)
             audio_norm = torch.cat((audio_norm, _audio_norm), -1)
         start = random.randint(0, spec.size(-1) - self.spec_len)
         end = start + self.spec_len
         spec = spec[:, start:end]
         c = c[:, start:end]
+        f0 = f0[start:end]
         audio_norm = audio_norm[:, start*self.hop_length:end*self.hop_length]
         
         if self.use_spk:
-            return c, spec, audio_norm, spk
+            return c, f0, spec, audio_norm, spk
         else:
-            return c, spec, audio_norm
+            return c, f0, spec, audio_norm
 
     def __getitem__(self, index):
         return self.get_audio(self.audiopaths[index][0])
