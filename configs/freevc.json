@@ -16,7 +16,7 @@
     "c_mel": 45,
     "c_kl": 1.0,
     "use_sr": true,
-    "max_speclen": 128,
+    "max_speclen": 256,
     "port": "8001"
   },
   "data": {
