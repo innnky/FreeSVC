@@ -16,7 +16,7 @@ def process(item):
         os.makedirs(os.path.join(args.out_dir1, speaker), exist_ok=True)
         os.makedirs(os.path.join(args.out_dir2, speaker), exist_ok=True)
         os.makedirs(os.path.join(args.out_dir3, speaker), exist_ok=True)
-        wav, sr = librosa.load(wav_path)
+        wav, sr = librosa.load(wav_path, None)
         wav, _ = librosa.effects.trim(wav, top_db=20)
         peak = np.abs(wav).max()
         if peak > 1.0:

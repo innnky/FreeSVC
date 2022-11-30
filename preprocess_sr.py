@@ -21,10 +21,10 @@ import numpy as np
 def get_f0(path,p_len=None, f0_up_key=0):
     x, _ = librosa.load(path, 16000)
     if p_len is None:
-        p_len = x.shape[0]//320
+        p_len = x.shape[0]//160
     else:
-        assert abs(p_len-x.shape[0]//320) < 2, (path, p_len, x.shape)
-    time_step = 320 / 16000 * 1000
+        assert abs(p_len-x.shape[0]//160) < 2, (path, p_len, x.shape)
+    time_step = 160 / 16000 * 1000
     f0_min = 50
     f0_max = 1100
     f0_mel_min = 1127 * np.log(1 + f0_min / 700)
@@ -89,8 +89,7 @@ def process(filename):
         #         _wav_rs
         # )
 
-    len = c.shape[-1]
-    cf0, f0 = get_f0(filename, len)
+    cf0, f0 = get_f0(filename)
     f0path = filename.replace("22k", "32k")+"f0.npy"
     np.save(f0path, cf0)
 

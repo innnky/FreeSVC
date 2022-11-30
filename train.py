@@ -63,7 +63,7 @@ def run(rank, n_gpus, hps):
       batch_size=hps.train.batch_size)
   if rank == 0:
     eval_dataset = EvalDataLoader(hps.data.validation_files, hps)
-    eval_loader = DataLoader(eval_dataset, num_workers=1, shuffle=True,
+    eval_loader = DataLoader(eval_dataset, num_workers=1, shuffle=False,
         batch_size=1, pin_memory=False,
         drop_last=False)
 
@@ -242,7 +242,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                 hps.data.mel_fmin,
                 hps.data.mel_fmax)
             _f0 = f0.clone()
-            for shift in [-20, 0, 20]:
+            for shift in [0]:
                 f0 = _f0.clone()
                 f0[f0!=1] += shift
                 y_hat = generator.module.infer(c, f0, g=g, mel=mel)

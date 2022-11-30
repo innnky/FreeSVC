@@ -10,6 +10,7 @@ import modules
 from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 from commons import init_weights, get_padding
+from vdecoder.hifigan.hifigan import HifiGanGenerator
 
 
 class ResidualCouplingBlock(nn.Module):
@@ -71,6 +72,7 @@ class Encoder(nn.Module):
 
 
   def forward(self, x, x_lengths, f0=None, g=None):
+    # print(x.shape,x_lengths.shape)
     x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
     x = self.pre(x) * x_mask
     if f0 is not None:
@@ -316,8 +318,20 @@ class SynthesizerTrn(nn.Module):
     self.use_spk = use_spk
 
     self.enc_p = Encoder(ssl_dim, inter_channels, hidden_channels, 5, 1, 16)
-    self.dec = Generator(inter_channels, resblock, resblock_kernel_sizes, resblock_dilation_sizes, upsample_rates, upsample_initial_channel, upsample_kernel_sizes, gin_channels=gin_channels)
-    self.enc_q = Encoder(spec_channels, inter_channels, hidden_channels, 5, 1, 16, gin_channels=gin_channels) 
+    hps = {
+        "resblock_kernel_sizes": resblock_kernel_sizes,
+        "inter_channels": inter_channels,
+        "upsample_rates": upsample_rates,
+        "upsample_kernel_sizes": upsample_kernel_sizes,
+        "upsample_initial_channel": upsample_initial_channel,
+        "use_pitch_embed": True,
+        "audio_sample_rate": 32000,
+        "resblock": "1",
+        "resblock_dilation_sizes": resblock_dilation_sizes,
+        "gin_channels": gin_channels
+    }
+    self.dec = HifiGanGenerator(h=hps)
+    self.enc_q = Encoder(spec_channels, inter_channels, hidden_channels, 5, 1, 16, gin_channels=gin_channels)
     self.flow = ResidualCouplingBlock(inter_channels, hidden_channels, 5, 1, 4, gin_channels=gin_channels)
     
     if not self.use_spk:
@@ -335,11 +349,13 @@ class SynthesizerTrn(nn.Module):
       
     _, m_p, logs_p, _ = self.enc_p(c, c_lengths, f0=f0)
     z, m_q, logs_q, spec_mask = self.enc_q(spec, spec_lengths, g=g) 
-    z_p = self.flow(z, spec_mask, g=g)
 
-    z_slice, ids_slice = commons.rand_slice_segments(z, spec_lengths, self.segment_size)
-    o = self.dec(z_slice, g=g)
-    
+    z_p = self.flow(z, spec_mask, g=g)
+    z_slice, pitch_slice, ids_slice = commons.rand_slice_segments_with_pitch(z, f0, spec_lengths, self.segment_size)
+
+    # o = self.dec(z_slice, g=g)
+    o = self.dec(z_slice, g=g, f0=pitch_slice)
+
     return o, ids_slice, spec_mask, (z, z_p, m_p, logs_p, m_q, logs_q)
 
   def infer(self, c, f0, g=None, mel=None, c_lengths=None):
@@ -351,6 +367,7 @@ class SynthesizerTrn(nn.Module):
 
     z_p, m_p, logs_p, c_mask = self.enc_p(c, c_lengths, f0=f0)
     z = self.flow(z_p, c_mask, g=g, reverse=True)
-    o = self.dec(z * c_mask, g=g)
-    
+    # o = self.dec(z * c_mask, g=g)
+    o = self.dec(z * c_mask, g=g, f0=f0)
+
     return o

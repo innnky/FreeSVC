@@ -34,69 +34,75 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         random.shuffle(self.audiopaths)
 
     def get_audio(self, filename):
-        audio, sampling_rate = load_wav_to_torch(filename)
-        if sampling_rate != self.sampling_rate:
-            raise ValueError("{} SR doesn't match target {} SR".format(
-                sampling_rate, self.sampling_rate))
-        audio_norm = audio / self.max_wav_value
-        audio_norm = audio_norm.unsqueeze(0)
-        spec_filename = filename.replace(".wav", ".spec.pt")
-        if os.path.exists(spec_filename):
-            spec = torch.load(spec_filename)
-        else:
-            spec = spectrogram_torch(audio_norm, self.filter_length,
-                self.sampling_rate, self.hop_length, self.win_length,
-                center=False)
-            spec = torch.squeeze(spec, 0)
-            torch.save(spec, spec_filename)
-            
-        if self.use_spk:
-            spk_filename = filename.replace(".wav", ".npy")
-            spk_filename = spk_filename.replace("dataset/32k", "dataset/spk")
-            spk = torch.from_numpy(np.load(spk_filename))
-        
-        if not self.use_sr:
-            c_filename = filename.replace(".wav", ".pt")
-            c_filename = c_filename.replace("dataset/32k", "dataset/wavlm")
-            c = torch.load(c_filename).squeeze(0)
-        else:
-            i = 68+4*random.randint(0,6)
+        try:
+            audio, sampling_rate = load_wav_to_torch(filename)
+            if sampling_rate != self.sampling_rate:
+                raise ValueError("{} SR doesn't match target {} SR".format(
+                    sampling_rate, self.sampling_rate))
+            audio_norm = audio / self.max_wav_value
+            audio_norm = audio_norm.unsqueeze(0)
+            spec_filename = filename.replace(".wav", ".spec.pt")
+            if os.path.exists(spec_filename):
+                spec = torch.load(spec_filename)
+            else:
+                spec = spectrogram_torch(audio_norm, self.filter_length,
+                    self.sampling_rate, self.hop_length, self.win_length,
+                    center=False)
+                spec = torch.squeeze(spec, 0)
+                torch.save(spec, spec_filename)
 
-            '''
-            basename = os.path.basename(filename)[:-4]
-            spkname = basename[:4]
-            #print(basename, spkname)
-            with h5py.File(f"dataset/rs/wavlm/{spkname}/{i}.hdf5","r") as f:
-                c = torch.from_numpy(f[basename][()]).squeeze(0)
-            #print(c)
-            '''
-            c_filename = filename.replace(".wav", f"_{i}.pt")
-            c_filename = c_filename.replace("dataset/32k", "dataset/sr/wavlm")
-            c = torch.load(c_filename).squeeze(0)
+            if self.use_spk:
+                spk_filename = filename.replace(".wav", ".npy")
+                spk_filename = spk_filename.replace("dataset/32k", "dataset/spk")
+                spk = torch.from_numpy(np.load(spk_filename))
 
-        f0 = np.load(filename+"f0.npy")
-        f0 = torch.LongTensor(f0)
-        lmin = min(c.size(-1), spec.size(-1))
-        assert abs(c.size(-1) - spec.size(-1)) < 2
-        spec, c, f0 = spec[:, :lmin], c[:, :lmin], f0[:lmin]
-        audio_norm = audio_norm[:, :lmin*self.hop_length]
-        _spec, _c, _audio_norm, _f0 = spec, c, audio_norm, f0
-        while spec.size(-1) < self.spec_len:
-            spec = torch.cat((spec, _spec), -1)
-            c = torch.cat((c, _c), -1)
-            f0 = torch.cat((f0, _f0), -1)
-            audio_norm = torch.cat((audio_norm, _audio_norm), -1)
-        start = random.randint(0, spec.size(-1) - self.spec_len)
-        end = start + self.spec_len
-        spec = spec[:, start:end]
-        c = c[:, start:end]
-        f0 = f0[start:end]
-        audio_norm = audio_norm[:, start*self.hop_length:end*self.hop_length]
-        
-        if self.use_spk:
-            return c, f0, spec, audio_norm, spk
-        else:
-            return c, f0, spec, audio_norm
+            if not self.use_sr:
+                c_filename = filename.replace(".wav", ".pt")
+                c_filename = c_filename.replace("dataset/32k", "dataset/wavlm")
+                c = torch.load(c_filename).squeeze(0)
+            else:
+                i = 68+4*random.randint(0,6)
+
+                '''
+                basename = os.path.basename(filename)[:-4]
+                spkname = basename[:4]
+                #print(basename, spkname)
+                with h5py.File(f"dataset/rs/wavlm/{spkname}/{i}.hdf5","r") as f:
+                    c = torch.from_numpy(f[basename][()]).squeeze(0)
+                #print(c)
+                '''
+                c_filename = filename.replace(".wav", f"_{i}.pt")
+                c_filename = c_filename.replace("dataset/32k", "dataset/sr/wavlm")
+                c = torch.load(c_filename).squeeze(0)
+            c = torch.repeat_interleave(c, repeats=2, dim=1)
+
+            f0 = np.load(filename+"f0.npy")
+            f0 = torch.LongTensor(f0)
+            lmin = min(c.size(-1), spec.size(-1),f0.shape[0])
+            assert abs(c.size(-1) - spec.size(-1))< 4, (c.size(-1) , spec.size(-1),f0.shape, filename)
+            assert abs(lmin - spec.size(-1)) < 4, (c.size(-1) , spec.size(-1),f0.shape)
+            assert abs(lmin - c.size(-1))< 4, (c.size(-1) , spec.size(-1),f0.shape)
+            spec, c, f0 = spec[:, :lmin], c[:, :lmin], f0[:lmin]
+            audio_norm = audio_norm[:, :lmin*self.hop_length]
+            _spec, _c, _audio_norm, _f0 = spec, c, audio_norm, f0
+            while spec.size(-1) < self.spec_len:
+                spec = torch.cat((spec, _spec), -1)
+                c = torch.cat((c, _c), -1)
+                f0 = torch.cat((f0, _f0), -1)
+                audio_norm = torch.cat((audio_norm, _audio_norm), -1)
+            start = random.randint(0, spec.size(-1) - self.spec_len)
+            end = start + self.spec_len
+            spec = spec[:, start:end]
+            c = c[:, start:end]
+            f0 = f0[start:end]
+            audio_norm = audio_norm[:, start*self.hop_length:end*self.hop_length]
+
+            if self.use_spk:
+                return c, f0, spec, audio_norm, spk
+            else:
+                return c, f0, spec, audio_norm
+        except:
+            print(filename)
 
     def __getitem__(self, index):
         return self.get_audio(self.audiopaths[index][0])
@@ -164,11 +170,12 @@ class EvalDataLoader(torch.utils.data.Dataset):
             c_filename = filename.replace(".wav", f"_{i}.pt")
             c_filename = c_filename.replace("dataset/32k", "dataset/sr/wavlm")
             c = torch.load(c_filename).squeeze(0)
+        c = torch.repeat_interleave(c, repeats=2, dim=1)
 
         f0 = np.load(filename + "f0.npy")
         f0 = torch.LongTensor(f0)
-        lmin = min(c.size(-1), spec.size(-1))
-        assert abs(c.size(-1) - spec.size(-1)) < 2
+        lmin = min(c.size(-1), spec.size(-1),f0.shape[0])
+        assert abs(c.size(-1) - spec.size(-1))< 4, (c.size(-1) , spec.size(-1),f0.shape)
         spec, c, f0 = spec[:, :lmin], c[:, :lmin], f0[:lmin]
         audio_norm = audio_norm[:, :lmin * self.hop_length]
 

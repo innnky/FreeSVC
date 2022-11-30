@@ -19,6 +19,7 @@ if __name__ == "__main__":
     
     for speaker in tqdm(os.listdir(args.source_dir)):
         wavs = [os.path.join(args.source_dir, speaker, i)for i in os.listdir(os.path.join(args.source_dir, speaker))]
+        wavs = [i for i in wavs if i.endswith("wav")]
         shuffle(wavs)
         train += wavs[2:-10]
         val += wavs[:2]
