@@ -67,16 +67,12 @@ class Encoder(nn.Module):
     self.pre = nn.Conv1d(in_channels, hidden_channels, 1)
     self.enc = modules.WN(hidden_channels, kernel_size, dilation_rate, n_layers, gin_channels=gin_channels)
     self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
-    if gin_channels == 0:
-        self.f0_emb = nn.Embedding(256, hidden_channels)
 
 
-  def forward(self, x, x_lengths, f0=None, g=None):
+  def forward(self, x, x_lengths, g=None):
     # print(x.shape,x_lengths.shape)
     x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
     x = self.pre(x) * x_mask
-    if f0 is not None:
-        x = x + self.f0_emb(f0).transpose(1,2)
     x = self.enc(x, x_mask, g=g)
     stats = self.proj(x) * x_mask
     m, logs = torch.split(stats, self.out_channels, dim=1)
@@ -318,26 +314,15 @@ class SynthesizerTrn(nn.Module):
     self.use_spk = use_spk
 
     self.enc_p = Encoder(ssl_dim, inter_channels, hidden_channels, 5, 1, 16)
-    hps = {
-        "resblock_kernel_sizes": resblock_kernel_sizes,
-        "inter_channels": inter_channels,
-        "upsample_rates": upsample_rates,
-        "upsample_kernel_sizes": upsample_kernel_sizes,
-        "upsample_initial_channel": upsample_initial_channel,
-        "use_pitch_embed": True,
-        "audio_sample_rate": 32000,
-        "resblock": "1",
-        "resblock_dilation_sizes": resblock_dilation_sizes,
-        "gin_channels": gin_channels
-    }
-    self.dec = HifiGanGenerator(h=hps)
+
+    self.dec = Generator(inter_channels, resblock, resblock_kernel_sizes, resblock_dilation_sizes, upsample_rates, upsample_initial_channel, upsample_kernel_sizes, gin_channels=gin_channels)
     self.enc_q = Encoder(spec_channels, inter_channels, hidden_channels, 5, 1, 16, gin_channels=gin_channels)
     self.flow = ResidualCouplingBlock(inter_channels, hidden_channels, 5, 1, 4, gin_channels=gin_channels)
     
     if not self.use_spk:
       self.enc_spk = SpeakerEncoder(model_hidden_size=gin_channels, model_embedding_size=gin_channels)
 
-  def forward(self, c, f0, spec, g=None, mel=None, c_lengths=None, spec_lengths=None):
+  def forward(self, c, spec, g=None, mel=None, c_lengths=None, spec_lengths=None):
     if c_lengths == None:
       c_lengths = (torch.ones(c.size(0)) * c.size(-1)).to(c.device)
     if spec_lengths == None:
@@ -347,27 +332,26 @@ class SynthesizerTrn(nn.Module):
       g = self.enc_spk(mel.transpose(1,2))
     g = g.unsqueeze(-1)
       
-    _, m_p, logs_p, _ = self.enc_p(c, c_lengths, f0=f0)
+    _, m_p, logs_p, _ = self.enc_p(c, c_lengths)
     z, m_q, logs_q, spec_mask = self.enc_q(spec, spec_lengths, g=g) 
 
     z_p = self.flow(z, spec_mask, g=g)
-    z_slice, pitch_slice, ids_slice = commons.rand_slice_segments_with_pitch(z, f0, spec_lengths, self.segment_size)
+    z_slice, ids_slice = commons.rand_slice_segments(z, spec_lengths, self.segment_size)
 
-    # o = self.dec(z_slice, g=g)
-    o = self.dec(z_slice, g=g, f0=pitch_slice)
+    o = self.dec(z_slice, g=g)
 
     return o, ids_slice, spec_mask, (z, z_p, m_p, logs_p, m_q, logs_q)
 
-  def infer(self, c, f0, g=None, mel=None, c_lengths=None):
+  def infer(self, c, g=None, mel=None, c_lengths=None):
     if c_lengths == None:
       c_lengths = (torch.ones(c.size(0)) * c.size(-1)).to(c.device)
     if not self.use_spk:
       g = self.enc_spk.embed_utterance(mel.transpose(1,2))
     g = g.unsqueeze(-1)
 
-    z_p, m_p, logs_p, c_mask = self.enc_p(c, c_lengths, f0=f0)
+    z_p, m_p, logs_p, c_mask = self.enc_p(c, c_lengths)
     z = self.flow(z_p, c_mask, g=g, reverse=True)
     # o = self.dec(z * c_mask, g=g)
-    o = self.dec(z * c_mask, g=g, f0=f0)
+    o = self.dec(z * c_mask, g=g)
 
     return o

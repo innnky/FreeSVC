@@ -49,6 +49,6 @@
     "use_spectral_norm": false,
     "gin_channels": 256,
     "ssl_dim": 1024,
-    "use_spk": true
+    "use_spk": false
   }
 }

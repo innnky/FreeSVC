@@ -123,14 +123,13 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
   net_d.train()
   for batch_idx, items in enumerate(train_loader):
     if hps.model.use_spk:
-      c, f0, spec, y, spk = items
+      c, spec, y, spk = items
       g = spk.cuda(rank, non_blocking=True)
     else:
-      c, f0, spec, y = items
+      c, spec, y = items
       g = None
     spec, y = spec.cuda(rank, non_blocking=True), y.cuda(rank, non_blocking=True)
     c = c.cuda(rank, non_blocking=True)
-    f0 = f0.cuda(rank, non_blocking=True)
     mel = spec_to_mel_torch(
           spec, 
           hps.data.filter_length, 
@@ -141,7 +140,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
 
     with autocast(enabled=hps.train.fp16_run):
       y_hat, ids_slice, z_mask,\
-      (z, z_p, m_p, logs_p, m_q, logs_q) = net_g(c, f0, spec, g=g, mel=mel)
+      (z, z_p, m_p, logs_p, m_q, logs_q) = net_g(c, spec, g=g, mel=mel)
       
       y_mel = commons.slice_segments(mel, ids_slice, hps.train.segment_size // hps.data.hop_length)
       y_hat_mel = mel_spectrogram_torch(
@@ -226,14 +225,13 @@ def evaluate(hps, generator, eval_loader, writer_eval):
     with torch.no_grad():
         for batch_idx, items in enumerate(eval_loader):
             if hps.model.use_spk:
-                c, f0, spec, y, spk = items
+                c, spec, y, spk = items
                 g = spk[:1].cuda(0)
             else:
-                c, f0, spec, y = items
+                c, spec, y = items
                 g = None
             spec, y = spec[:1].cuda(0), y[:1].cuda(0)
             c = c[:1].cuda(0)
-            f0 = f0[:1].cuda(0)
             mel = spec_to_mel_torch(
                 spec,
                 hps.data.filter_length,
@@ -241,27 +239,23 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                 hps.data.sampling_rate,
                 hps.data.mel_fmin,
                 hps.data.mel_fmax)
-            _f0 = f0.clone()
-            for shift in [0]:
-                f0 = _f0.clone()
-                f0[f0!=1] += shift
-                y_hat = generator.module.infer(c, f0, g=g, mel=mel)
+            y_hat = generator.module.infer(c, g=g, mel=mel)
 
-                y_hat_mel = mel_spectrogram_torch(
-                y_hat.squeeze(1).float(),
-                    hps.data.filter_length,
-                    hps.data.n_mel_channels,
-                    hps.data.sampling_rate,
-                    hps.data.hop_length,
-                    hps.data.win_length,
-                    hps.data.mel_fmin,
-                    hps.data.mel_fmax
-                    )
+            y_hat_mel = mel_spectrogram_torch(
+            y_hat.squeeze(1).float(),
+                hps.data.filter_length,
+                hps.data.n_mel_channels,
+                hps.data.sampling_rate,
+                hps.data.hop_length,
+                hps.data.win_length,
+                hps.data.mel_fmin,
+                hps.data.mel_fmax
+                )
 
-                audio_dict.update( {
-                  f"gen/audio_{batch_idx}_{shift}": y_hat[0],
-                  f"gt/audio_{batch_idx}": y[0]
-                })
+            audio_dict.update( {
+              f"gen/audio_{batch_idx}": y_hat[0],
+              f"gt/audio_{batch_idx}": y[0]
+            })
         image_dict.update( {
           f"gen/mel": utils.plot_spectrogram_to_numpy(y_hat_mel[0].cpu().numpy()),
           "gt/mel": utils.plot_spectrogram_to_numpy(mel[0].cpu().numpy())
