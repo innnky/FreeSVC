@@ -7,7 +7,7 @@
     "learning_rate": 2e-4,
     "betas": [0.8, 0.99],
     "eps": 1e-9,
-    "batch_size": 32,
+    "batch_size": 16,
     "fp16_run": false,
     "lr_decay": 0.999875,
     "segment_size": 8960,
@@ -48,7 +48,11 @@
     "n_layers_q": 3,
     "use_spectral_norm": false,
     "gin_channels": 256,
-    "ssl_dim": 1024,
-    "use_spk": true
+    "ssl_dim": 1024
+  },
+  "spk":{
+    "nyaru": 0,
+    "taffy": 1,
+    "yunhao": 2
   }
 }

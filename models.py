@@ -294,7 +294,6 @@ class SynthesizerTrn(nn.Module):
     upsample_kernel_sizes,
     gin_channels,
     ssl_dim,
-    use_spk,
     **kwargs):
 
     super().__init__()
@@ -315,7 +314,7 @@ class SynthesizerTrn(nn.Module):
     self.segment_size = segment_size
     self.gin_channels = gin_channels
     self.ssl_dim = ssl_dim
-    self.use_spk = use_spk
+    self.emb_g = nn.Embedding(10, gin_channels)
 
     self.enc_p = Encoder(ssl_dim, inter_channels, hidden_channels, 5, 1, 16)
     hps = {
@@ -333,20 +332,15 @@ class SynthesizerTrn(nn.Module):
     self.dec = HifiGanGenerator(h=hps)
     self.enc_q = Encoder(spec_channels, inter_channels, hidden_channels, 5, 1, 16, gin_channels=gin_channels)
     self.flow = ResidualCouplingBlock(inter_channels, hidden_channels, 5, 1, 4, gin_channels=gin_channels)
-    
-    if not self.use_spk:
-      self.enc_spk = SpeakerEncoder(model_hidden_size=gin_channels, model_embedding_size=gin_channels)
 
   def forward(self, c, f0, spec, g=None, mel=None, c_lengths=None, spec_lengths=None):
     if c_lengths == None:
       c_lengths = (torch.ones(c.size(0)) * c.size(-1)).to(c.device)
     if spec_lengths == None:
       spec_lengths = (torch.ones(spec.size(0)) * spec.size(-1)).to(spec.device)
-      
-    if not self.use_spk:
-      g = self.enc_spk(mel.transpose(1,2))
-    g = g.unsqueeze(-1)
-      
+
+    g = self.emb_g(g).transpose(1,2)
+
     _, m_p, logs_p, _ = self.enc_p(c, c_lengths, f0=f0)
     z, m_q, logs_q, spec_mask = self.enc_q(spec, spec_lengths, g=g) 
 
@@ -361,9 +355,7 @@ class SynthesizerTrn(nn.Module):
   def infer(self, c, f0, g=None, mel=None, c_lengths=None):
     if c_lengths == None:
       c_lengths = (torch.ones(c.size(0)) * c.size(-1)).to(c.device)
-    if not self.use_spk:
-      g = self.enc_spk.embed_utterance(mel.transpose(1,2))
-    g = g.unsqueeze(-1)
+    g = self.emb_g(g).transpose(1,2)
 
     z_p, m_p, logs_p, c_mask = self.enc_p(c, c_lengths, f0=f0)
     z = self.flow(z_p, c_mask, g=g, reverse=True)

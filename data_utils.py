@@ -31,8 +31,8 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         self.win_length = hparams.data.win_length
         self.sampling_rate = hparams.data.sampling_rate
         self.use_sr = hparams.train.use_sr
-        self.use_spk = hparams.model.use_spk
         self.spec_len = hparams.train.max_speclen
+        self.spk_map = hparams.spk
 
         random.seed(1234)
         random.shuffle(self.audiopaths)
@@ -54,11 +54,8 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             spec = torch.squeeze(spec, 0)
             torch.save(spec, spec_filename)
 
-        if self.use_spk:
-            spk_filename = filename.replace(".wav", ".npy")
-            spk_filename = spk_filename.replace("dataset/32k", "dataset/spk")
-            spk = torch.from_numpy(np.load(spk_filename))
-
+        spk = filename.split("/")[-2]
+        spk = torch.LongTensor([self.spk_map[spk]])
         if not self.use_sr:
             c_filename = filename.replace(".wav", ".pt")
             c_filename = c_filename.replace("dataset/32k", "dataset/wavlm")
@@ -100,10 +97,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         f0 = f0[start:end]
         audio_norm = audio_norm[:, start * self.hop_length:end * self.hop_length]
 
-        if self.use_spk:
-            return c, f0, spec, audio_norm, spk
-        else:
-            return c, f0, spec, audio_norm
+        return c, f0, spec, audio_norm, spk
 
     def __getitem__(self, index):
         return self.get_audio(self.audiopaths[index][0])
@@ -128,8 +122,9 @@ class EvalDataLoader(torch.utils.data.Dataset):
         self.win_length = hparams.data.win_length
         self.sampling_rate = hparams.data.sampling_rate
         self.use_sr = hparams.train.use_sr
-        self.use_spk = hparams.model.use_spk
         self.audiopaths = self.audiopaths[:5]
+        self.spk_map = hparams.spk
+
 
     def get_audio(self, filename):
         audio, sampling_rate = load_wav_to_torch(filename)
@@ -148,10 +143,8 @@ class EvalDataLoader(torch.utils.data.Dataset):
             spec = torch.squeeze(spec, 0)
             torch.save(spec, spec_filename)
 
-        if self.use_spk:
-            spk_filename = filename.replace(".wav", ".npy")
-            spk_filename = spk_filename.replace("dataset/32k", "dataset/spk")
-            spk = torch.from_numpy(np.load(spk_filename))
+        spk = filename.split("/")[-2]
+        spk = torch.LongTensor([self.spk_map[spk]])
 
         if not self.use_sr:
             c_filename = filename.replace(".wav", ".pt")
@@ -180,10 +173,7 @@ class EvalDataLoader(torch.utils.data.Dataset):
         spec, c, f0 = spec[:, :lmin], c[:, :lmin], f0[:lmin]
         audio_norm = audio_norm[:, :lmin * self.hop_length]
 
-        if self.use_spk:
-            return c, f0, spec, audio_norm, spk
-        else:
-            return c, f0, spec, audio_norm
+        return c, f0, spec, audio_norm, spk
 
     def __getitem__(self, index):
         return self.get_audio(self.audiopaths[index][0])
