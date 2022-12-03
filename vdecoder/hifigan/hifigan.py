@@ -291,18 +291,17 @@ class DiscriminatorS(torch.nn.Module):
 
 
 class MultiScaleDiscriminator(torch.nn.Module):
-    def __init__(self, use_cond=False, c_in=1):
+    def __init__(self, use_cond=False, c_in=1, hop_size=320):
         super(MultiScaleDiscriminator, self).__init__()
-        from utils.hparams import hparams
         self.discriminators = nn.ModuleList([
             DiscriminatorS(use_spectral_norm=True, use_cond=use_cond,
-                           upsample_rates=[4, 4, hparams['hop_size'] // 16],
+                           upsample_rates=[4, 4, hop_size // 16],
                            c_in=c_in),
             DiscriminatorS(use_cond=use_cond,
-                           upsample_rates=[4, 4, hparams['hop_size'] // 32],
+                           upsample_rates=[4, 4, hop_size // 32],
                            c_in=c_in),
             DiscriminatorS(use_cond=use_cond,
-                           upsample_rates=[4, 4, hparams['hop_size'] // 64],
+                           upsample_rates=[4, 4, hop_size // 64],
                            c_in=c_in),
         ])
         self.meanpools = nn.ModuleList([

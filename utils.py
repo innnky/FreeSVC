@@ -5,7 +5,10 @@ import argparse
 import logging
 import json
 import subprocess
+
+import librosa
 import numpy as np
+import torchaudio
 from scipy.io.wavfile import read
 import torch
 import torchvision
@@ -13,12 +16,31 @@ from torch.nn import functional as F
 from commons import sequence_mask
 import hifigan
 from wavlm import WavLM, WavLMConfig
-
+import hubert_model
 MATPLOTLIB_FLAG = False
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging
 
+def get_hubert_model(rank=None):
+
+  hubert_soft = hubert_model.hubert_soft("hubert/hubert-soft-0d54a1f4.pt")
+  if rank is not None:
+    hubert_soft = hubert_soft.cuda(rank)
+  return hubert_soft
+
+def get_hubert_content(hmodel, y=None, path=None):
+  if path is not None:
+    source, sr = torchaudio.load(path)
+    source = torchaudio.functional.resample(source, sr, 16000)
+    if len(source.shape) == 2 and source.shape[1] >= 2:
+      source = torch.mean(source, dim=0).unsqueeze(0)
+  else:
+    source = y
+  source = source.unsqueeze(0)
+  with torch.inference_mode():
+    units = hmodel.units(source)
+    return units.transpose(1,2)
 
 def get_cmodel(rank):
     if rank is None:
@@ -32,8 +54,8 @@ def get_cmodel(rank):
     cmodel.load_state_dict(checkpoint['model'])
     cmodel.eval()
     return cmodel
-    
-    
+
+
 def get_content(cmodel, y):
     with torch.no_grad():
         c = cmodel.extract_features(y.squeeze(1))[0]
@@ -52,8 +74,8 @@ def get_vocoder(rank):
     vocoder.remove_weight_norm()
     vocoder.cuda(rank)
     return vocoder
-    
-    
+
+
 def transform(mel, height): # 68-92
     #r = np.random.random()
     #rate = r * 0.3 + 0.85 # 0.85-1.15
@@ -62,11 +84,11 @@ def transform(mel, height): # 68-92
     if height >= mel.size(-2):
         return tgt[:, :mel.size(-2), :]
     else:
-        silence = tgt[:,-1:,:].repeat(1,mel.size(-2)-height,1) 
+        silence = tgt[:,-1:,:].repeat(1,mel.size(-2)-height,1)
         silence += torch.randn_like(silence) / 10
         return torch.cat((tgt, silence), 1)
-        
-        
+
+
 def stretch(mel, width): # 0.5-2
     return torchvision.transforms.functional.resize(mel, (mel.size(-2), width))
 
@@ -147,7 +169,7 @@ def plot_spectrogram_to_numpy(spectrogram):
     mpl_logger.setLevel(logging.WARNING)
   import matplotlib.pylab as plt
   import numpy as np
-  
+
   fig, ax = plt.subplots(figsize=(10,2))
   im = ax.imshow(spectrogram, aspect="auto", origin="lower",
                   interpolation='none')
@@ -209,7 +231,7 @@ def get_hparams(init=True):
                       help='JSON file for configuration')
   parser.add_argument('-m', '--model', type=str, required=True,
                       help='Model name')
-  
+
   args = parser.parse_args()
   model_dir = os.path.join("./logs", args.model)
 
@@ -227,7 +249,7 @@ def get_hparams(init=True):
     with open(config_save_path, "r") as f:
       data = f.read()
   config = json.loads(data)
-  
+
   hparams = HParams(**config)
   hparams.model_dir = model_dir
   return hparams
@@ -277,7 +299,7 @@ def get_logger(model_dir, filename="train.log"):
   global logger
   logger = logging.getLogger(os.path.basename(model_dir))
   logger.setLevel(logging.DEBUG)
-  
+
   formatter = logging.Formatter("%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s")
   if not os.path.exists(model_dir):
     os.makedirs(model_dir)
@@ -294,7 +316,7 @@ class HParams():
       if type(v) == dict:
         v = HParams(**v)
       self[k] = v
-    
+
   def keys(self):
     return self.__dict__.keys()
 
@@ -318,3 +340,13 @@ class HParams():
 
   def __repr__(self):
     return self.__dict__.__repr__()
+
+if __name__ == '__main__':
+  h = get_hubert_model()
+  audio,sr =librosa.load("/Volumes/Extend/下载/p237_004-1.wav", 16000)
+  wav = torch.from_numpy(audio).unsqueeze(0)
+  print(get_hubert_content(h, wav).shape)
+  h = get_cmodel(None)
+  audio,sr =librosa.load("/Volumes/Extend/下载/p237_004-1.wav", 16000)
+  wav = torch.from_numpy(audio).unsqueeze(0)
+  print(get_content(h, wav).shape)

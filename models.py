@@ -4,6 +4,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+import attentions
 import commons
 import modules
 
@@ -67,17 +68,55 @@ class Encoder(nn.Module):
     self.pre = nn.Conv1d(in_channels, hidden_channels, 1)
     self.enc = modules.WN(hidden_channels, kernel_size, dilation_rate, n_layers, gin_channels=gin_channels)
     self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
-    if gin_channels == 0:
-        self.f0_emb = nn.Embedding(256, hidden_channels)
 
-
-  def forward(self, x, x_lengths, f0=None, g=None):
+  def forward(self, x, x_lengths, g=None):
     # print(x.shape,x_lengths.shape)
     x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
     x = self.pre(x) * x_mask
-    if f0 is not None:
-        x = x + self.f0_emb(f0).transpose(1,2)
     x = self.enc(x, x_mask, g=g)
+    stats = self.proj(x) * x_mask
+    m, logs = torch.split(stats, self.out_channels, dim=1)
+    z = (m + torch.randn_like(m) * torch.exp(logs)) * x_mask
+    return z, m, logs, x_mask
+
+
+class TextEncoder(nn.Module):
+  def __init__(self,
+      in_channels,
+      out_channels,
+      hidden_channels,
+      kernel_size,
+      dilation_rate,
+      n_layers,
+      gin_channels=0,
+      filter_channels=None,
+      n_heads=None,
+      p_dropout=None):
+    super().__init__()
+    self.in_channels = in_channels
+    self.out_channels = out_channels
+    self.hidden_channels = hidden_channels
+    self.kernel_size = kernel_size
+    self.dilation_rate = dilation_rate
+    self.n_layers = n_layers
+    self.gin_channels = gin_channels
+
+    self.pre = nn.Conv1d(in_channels, hidden_channels, 1)
+    self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
+    self.f0_emb = nn.Embedding(256, hidden_channels)
+    self.enc_ =  attentions.Encoder(
+        hidden_channels,
+        filter_channels,
+        n_heads,
+        n_layers,
+        kernel_size,
+        p_dropout)
+
+  def forward(self, x, x_lengths, f0=None):
+    x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
+    x = self.pre(x) * x_mask
+    x = x + self.f0_emb(f0).transpose(1,2)
+    x = self.enc_(x * x_mask, x_mask)
     stats = self.proj(x) * x_mask
     m, logs = torch.split(stats, self.out_channels, dim=1)
     z = (m + torch.randn_like(m) * torch.exp(logs)) * x_mask
@@ -316,7 +355,7 @@ class SynthesizerTrn(nn.Module):
     self.ssl_dim = ssl_dim
     self.emb_g = nn.Embedding(10, gin_channels)
 
-    self.enc_p = Encoder(ssl_dim, inter_channels, hidden_channels, 5, 1, 16)
+    self.enc_p_ = TextEncoder(ssl_dim, inter_channels, hidden_channels, 5, 1, 16,0, filter_channels, n_heads, p_dropout)
     hps = {
         "resblock_kernel_sizes": resblock_kernel_sizes,
         "inter_channels": inter_channels,
@@ -341,7 +380,7 @@ class SynthesizerTrn(nn.Module):
 
     g = self.emb_g(g).transpose(1,2)
 
-    _, m_p, logs_p, _ = self.enc_p(c, c_lengths, f0=f0)
+    _, m_p, logs_p, _ = self.enc_p_(c, c_lengths, f0=f0)
     z, m_q, logs_q, spec_mask = self.enc_q(spec, spec_lengths, g=g) 
 
     z_p = self.flow(z, spec_mask, g=g)
@@ -357,7 +396,7 @@ class SynthesizerTrn(nn.Module):
       c_lengths = (torch.ones(c.size(0)) * c.size(-1)).to(c.device)
     g = self.emb_g(g).transpose(1,2)
 
-    z_p, m_p, logs_p, c_mask = self.enc_p(c, c_lengths, f0=f0)
+    z_p, m_p, logs_p, c_mask = self.enc_p_(c, c_lengths, f0=f0)
     z = self.flow(z_p, c_mask, g=g, reverse=True)
     # o = self.dec(z * c_mask, g=g)
     o = self.dec(z * c_mask, g=g, f0=f0)

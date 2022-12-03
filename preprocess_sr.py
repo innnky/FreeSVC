@@ -78,7 +78,7 @@ def process(filename):
         wav_rs = vocoder(mel_rs)[0][0].detach().cpu().numpy()
         _wav_rs = librosa.resample(wav_rs, orig_sr=hps.sampling_rate, target_sr=args.sr)
         wav_rs = torch.from_numpy(_wav_rs).cuda().unsqueeze(0)
-        c = utils.get_content(cmodel, wav_rs)
+        c = utils.get_hubert_content(hmodel, wav_rs)
         ssl_path = os.path.join(ssl_dir, basename.replace(".wav", f"_{i}.pt"))
         torch.save(c.cpu(), ssl_path)
         #print(wav_rs.size(), c.size())
@@ -105,11 +105,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("Loading WavLM for content...")
-    checkpoint = torch.load('wavlm/WavLM-Large.pt')
-    cfg = WavLMConfig(checkpoint['cfg'])
-    cmodel = WavLM(cfg).cuda()
-    cmodel.load_state_dict(checkpoint['model'])
-    cmodel.eval()
+    hmodel = utils.get_hubert_model(0)
     print("Loaded WavLM.")
 
     print("Loading vocoder...")

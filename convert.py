@@ -64,38 +64,41 @@ if __name__ == "__main__":
     net_g = SynthesizerTrn(
         hps.data.filter_length // 2 + 1,
         hps.train.segment_size // hps.data.hop_length,
-        **hps.model)
+        **hps.model).cuda()
     _ = net_g.eval()
     print("Loading checkpoint...")
     _ = utils.load_checkpoint(args.ptfile, net_g, None)
 
     print("Loading WavLM for content...")
-    cmodel = utils.get_cmodel(None)
+    cmodel = utils.get_cmodel(0)
 
     print("Processing text...")
-    titles, srcs, tgts = [], [], []
+    titles, srcs, tgts, shifts = [], [], [], []
+
     for sample in os.listdir("sample"):
         for i in range(3):
-            title = f"{sample[:-4]}-{i}"
-            src = f"sample/{sample}"
-            tgt = i
-            titles.append(title)
-            srcs.append(src)
-            tgts.append(tgt)
+            for shift in (-12,-6,0,6,12):
+                title = f"{sample[:-4]}-{i}-{shift}"
+                src = f"sample/{sample}"
+                tgt = i
+                titles.append(title)
+                srcs.append(src)
+                tgts.append(tgt)
+                shifts.append(shift)
 
     print("Synthesizing...")
     with torch.no_grad():
-        for line in tqdm(zip(titles, srcs, tgts)):
-            title, src, tgt = line
+        for line in tqdm(zip(titles, srcs, tgts, shifts)):
+            title, src, tgt, shift = line
             # src
             wav_src, _ = librosa.load(src, sr=16000)
-            wav_src = torch.from_numpy(wav_src).unsqueeze(0)
+            wav_src = torch.from_numpy(wav_src).unsqueeze(0).cuda()
             c = utils.get_content(cmodel, wav_src)
             c = torch.repeat_interleave(c, repeats=2, dim=2)
             print(c.shape)
-            g = torch.LongTensor([[tgt]])
-            cf0, f0bk = get_f0(src, c.shape[-1])
-            f0 = torch.LongTensor(cf0).unsqueeze(0)
+            g = torch.LongTensor([[tgt]]).cuda()
+            cf0, f0bk = get_f0(src, c.shape[-1], f0_up_key=shift)
+            f0 = torch.LongTensor(cf0).unsqueeze(0).cuda()
             audio = net_g.infer(c,f0=f0, g=g)
             audio = audio[0][0].data.cpu().float().numpy()
             if args.use_timestamp:
