@@ -18,13 +18,13 @@ import utils
 from data_utils import TextAudioSpeakerLoader, EvalDataLoader
 from models import (
     SynthesizerTrn,
-    FreeSVCDiscriminator,
+    MultiPeriodDiscriminator,
 )
 from losses import (
-    kl_loss
+    kl_loss,
+    generator_loss, discriminator_loss, feature_loss
 )
 
-from vdecoder.hifigan.hifigan import generator_loss, discriminator_loss, feature_loss
 from mel_processing import mel_spectrogram_torch, spec_to_mel_torch
 
 torch.backends.cudnn.benchmark = True
@@ -72,7 +72,7 @@ def run(rank, n_gpus, hps):
         hps.data.filter_length // 2 + 1,
         hps.train.segment_size // hps.data.hop_length,
         **hps.model).cuda(rank)
-    net_d = FreeSVCDiscriminator(hps.model.use_spectral_norm).cuda(rank)
+    net_d = MultiPeriodDiscriminator(hps.model.use_spectral_norm).cuda(rank)
     optim_g = torch.optim.AdamW(
         net_g.parameters(),
         hps.train.learning_rate,
@@ -158,12 +158,12 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
             y = commons.slice_segments(y, ids_slice * hps.data.hop_length, hps.train.segment_size)  # slice
 
             # Discriminator
-            y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g, y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = net_d(y,
-                                                                                                           y_hat.detach())
+            y_d_hat_r, y_d_hat_g, _, _ = net_d(y, y_hat.detach())
+
             with autocast(enabled=False):
-                loss_disc_f, losses_disc_f_r, losses_disc_f_g = discriminator_loss(y_df_hat_r, y_df_hat_g)
-                loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
-                loss_disc_all = loss_disc_s + loss_disc_f
+                loss_disc, losses_disc_r, losses_disc_g = discriminator_loss(y_d_hat_r, y_d_hat_g)
+                loss_disc_all = loss_disc
+
         optim_d.zero_grad()
         scaler.scale(loss_disc_all).backward()
         scaler.unscale_(optim_d)
@@ -172,7 +172,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
 
         with autocast(enabled=hps.train.fp16_run):
             # Generator
-            y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g, y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = net_d(y, y_hat)
+            y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = net_d(y, y_hat)
             with autocast(enabled=False):
                 loss_mel = F.l1_loss(y_mel, y_hat_mel) * hps.train.c_mel
                 loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask) * hps.train.c_kl
