@@ -115,7 +115,7 @@ def process(filename):
 
     cf0, f0 = get_f0(filename)
     f0path = filename.replace("22k", "32k")+"f0.npy"
-    np.save(f0path, cf0)
+    np.save(f0path, f0)
     e = get_energy(filename)
     assert e.shape[0] == cf0.shape[0]
     energy_path = filename.replace("22k", "32k")+"energy.npy"

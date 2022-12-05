@@ -77,7 +77,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         c = torch.repeat_interleave(c, repeats=2, dim=1)
 
         f0 = np.load(filename + "f0.npy")
-        f0 = torch.LongTensor(f0)
+        f0 = torch.FloatTensor(f0)
         energy = np.load(filename + "energy.npy")
         energy = torch.FloatTensor(energy)
 
@@ -174,7 +174,7 @@ class EvalDataLoader(torch.utils.data.Dataset):
         c = torch.repeat_interleave(c, repeats=2, dim=1)
 
         f0 = np.load(filename + "f0.npy")
-        f0 = torch.LongTensor(f0)
+        f0 = torch.FloatTensor(f0)
         energy = np.load(filename + "energy.npy")
         energy = torch.FloatTensor(energy)
 
