@@ -176,11 +176,9 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
             with autocast(enabled=False):
                 loss_mel = F.l1_loss(y_mel, y_hat_mel) * hps.train.c_mel
                 loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask) * hps.train.c_kl
-                loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-                loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-                loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
-                loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
-                loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel + loss_kl
+                loss_fm = feature_loss(fmap_r, fmap_g)
+                loss_gen, losses_gen = generator_loss(y_d_hat_g)
+                loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl
         optim_g.zero_grad()
         scaler.scale(loss_gen_all).backward()
         scaler.unscale_(optim_g)
@@ -191,9 +189,6 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
         if rank == 0:
             if global_step % hps.train.log_interval == 0:
                 lr = optim_g.param_groups[0]['lr']
-                loss_disc =loss_disc_all
-                loss_gen = loss_gen_s + loss_gen_f
-                loss_fm = loss_fm_s + loss_fm_f
                 losses = [loss_disc, loss_gen, loss_fm, loss_mel, loss_kl]
                 logger.info('Train Epoch: {} [{:.0f}%]'.format(
                     epoch,
@@ -204,9 +199,9 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
                                "grad_norm_d": grad_norm_d, "grad_norm_g": grad_norm_g}
                 scalar_dict.update({"loss/g/fm": loss_fm, "loss/g/mel": loss_mel, "loss/g/kl": loss_kl})
 
-                # scalar_dict.update({"loss/g/{}".format(i): v for i, v in enumerate(losses_gen)})
-                # scalar_dict.update({"loss/d_r/{}".format(i): v for i, v in enumerate(losses_disc_r)})
-                # scalar_dict.update({"loss/d_g/{}".format(i): v for i, v in enumerate(losses_disc_g)})
+                scalar_dict.update({"loss/g/{}".format(i): v for i, v in enumerate(losses_gen)})
+                scalar_dict.update({"loss/d_r/{}".format(i): v for i, v in enumerate(losses_disc_r)})
+                scalar_dict.update({"loss/d_g/{}".format(i): v for i, v in enumerate(losses_disc_g)})
                 image_dict = {
                     "slice/mel_org": utils.plot_spectrogram_to_numpy(y_mel[0].data.cpu().numpy()),
                     "slice/mel_gen": utils.plot_spectrogram_to_numpy(y_hat_mel[0].data.cpu().numpy()),
