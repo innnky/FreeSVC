@@ -104,11 +104,7 @@ class TextEncoder(nn.Module):
     self.pre = nn.Conv1d(in_channels, hidden_channels, 1)
     self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
     self.f0_emb = nn.Embedding(256, hidden_channels)
-    self.energy_emb = nn.Embedding(256, hidden_channels)
-    self.energy_bins = nn.Parameter(
-        torch.linspace(0, 426, 256 - 1),
-        requires_grad=False,
-    )
+
     self.enc_ =  attentions.Encoder(
         hidden_channels,
         filter_channels,
@@ -117,10 +113,10 @@ class TextEncoder(nn.Module):
         kernel_size,
         p_dropout)
 
-  def forward(self, x, x_lengths, f0=None,energy=None):
+  def forward(self, x, x_lengths, f0=None):
     x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
     x = self.pre(x) * x_mask
-    x = x + self.f0_emb(f0).transpose(1,2) + self.energy_emb(torch.bucketize(energy, self.energy_bins)).transpose(1, 2)
+    x = x + self.f0_emb(f0).transpose(1,2)
     x = self.enc_(x * x_mask, x_mask)
     stats = self.proj(x) * x_mask
     m, logs = torch.split(stats, self.out_channels, dim=1)
@@ -323,7 +319,7 @@ class SynthesizerTrn(nn.Module):
     self.enc_q = Encoder(spec_channels, inter_channels, hidden_channels, 5, 1, 16, gin_channels=gin_channels)
     self.flow = ResidualCouplingBlock(inter_channels, hidden_channels, 5, 1, 4, gin_channels=gin_channels)
 
-  def forward(self, c, f0, energy, spec, g=None, mel=None, c_lengths=None, spec_lengths=None):
+  def forward(self, c, f0, spec, g=None, mel=None, c_lengths=None, spec_lengths=None):
     if c_lengths == None:
       c_lengths = (torch.ones(c.size(0)) * c.size(-1)).to(c.device)
     if spec_lengths == None:
@@ -331,7 +327,7 @@ class SynthesizerTrn(nn.Module):
 
     g = self.emb_g(g).transpose(1,2)
 
-    _, m_p, logs_p, _ = self.enc_p_(c, c_lengths, f0=f0_to_coarse(f0), energy=energy)
+    _, m_p, logs_p, _ = self.enc_p_(c, c_lengths, f0=f0_to_coarse(f0))
     z, m_q, logs_q, spec_mask = self.enc_q(spec, spec_lengths, g=g) 
 
     z_p = self.flow(z, spec_mask, g=g)
@@ -342,12 +338,12 @@ class SynthesizerTrn(nn.Module):
 
     return o, ids_slice, spec_mask, (z, z_p, m_p, logs_p, m_q, logs_q)
 
-  def infer(self, c, f0, energy, g=None, mel=None, c_lengths=None):
+  def infer(self, c, f0, g=None, mel=None, c_lengths=None):
     if c_lengths == None:
       c_lengths = (torch.ones(c.size(0)) * c.size(-1)).to(c.device)
     g = self.emb_g(g).transpose(1,2)
 
-    z_p, m_p, logs_p, c_mask = self.enc_p_(c, c_lengths, f0=f0_to_coarse(f0), energy=energy)
+    z_p, m_p, logs_p, c_mask = self.enc_p_(c, c_lengths, f0=f0_to_coarse(f0))
     z = self.flow(z_p, c_mask, g=g, reverse=True)
     # o = self.dec(z * c_mask, g=g)
     o = self.dec(z * c_mask, g=g, f0=f0)

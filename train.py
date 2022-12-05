@@ -126,12 +126,11 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
     net_g.train()
     net_d.train()
     for batch_idx, items in enumerate(train_loader):
-        c, f0,energy, spec, y, spk = items
+        c, f0, spec, y, spk = items
         g = spk.cuda(rank, non_blocking=True)
         spec, y = spec.cuda(rank, non_blocking=True), y.cuda(rank, non_blocking=True)
         c = c.cuda(rank, non_blocking=True)
         f0 = f0.cuda(rank, non_blocking=True)
-        energy = energy.cuda(rank, non_blocking=True)
         mel = spec_to_mel_torch(
             spec,
             hps.data.filter_length,
@@ -142,7 +141,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
 
         with autocast(enabled=hps.train.fp16_run):
             y_hat, ids_slice, z_mask, \
-            (z, z_p, m_p, logs_p, m_q, logs_q) = net_g(c, f0, energy, spec, g=g, mel=mel)
+            (z, z_p, m_p, logs_p, m_q, logs_q) = net_g(c, f0, spec, g=g, mel=mel)
 
             y_mel = commons.slice_segments(mel, ids_slice, hps.train.segment_size // hps.data.hop_length)
             y_hat_mel = mel_spectrogram_torch(
@@ -231,12 +230,11 @@ def evaluate(hps, generator, eval_loader, writer_eval):
     audio_dict = {}
     with torch.no_grad():
         for batch_idx, items in enumerate(eval_loader):
-            c, f0, energy, spec, y, spk = items
+            c, f0, spec, y, spk = items
             g = spk[:1].cuda(0)
             spec, y = spec[:1].cuda(0), y[:1].cuda(0)
             c = c[:1].cuda(0)
             f0 = f0[:1].cuda(0)
-            energy = energy[:1].cuda(0)
             mel = spec_to_mel_torch(
                 spec,
                 hps.data.filter_length,
@@ -248,7 +246,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
             for shift in [0]:
                 f0 = _f0.clone()
                 f0[f0 != 1] += shift
-                y_hat = generator.module.infer(c, f0, energy, g=g, mel=mel)
+                y_hat = generator.module.infer(c, f0, g=g, mel=mel)
 
                 y_hat_mel = mel_spectrogram_torch(
                     y_hat.squeeze(1).float(),
