@@ -2,7 +2,6 @@ import os
 import argparse
 
 import torch
-import librosa
 import json
 from glob import glob
 from tqdm import tqdm
@@ -16,7 +15,32 @@ import logging
 logging.getLogger('numba').setLevel(logging.WARNING)
 
 import parselmouth
+import librosa
 import numpy as np
+def stft(y):
+    return librosa.stft(
+        y=y,
+        n_fft=1280,
+        hop_length=160,
+        win_length=1280,
+    )
+
+def energy(y):
+    # Extract energy
+    S = librosa.magphase(stft(y))[0]
+    e = np.sqrt(np.sum(S ** 2, axis=0))  # np.linalg.norm(S, axis=0)
+    return e.squeeze()  # (Number of frames) => (654,)
+
+def get_energy(path, p_len=None):
+    wav, sr = librosa.load(path, 16000)
+    e = energy(wav)
+    if p_len is None:
+        p_len = wav.shape[0] // 160
+    assert e.shape[0] -p_len <2 ,(e.shape[0] ,p_len)
+    e = e[: p_len]
+    return e
+
+
 
 def get_f0(path,p_len=None, f0_up_key=0):
     x, _ = librosa.load(path, 16000)
@@ -92,6 +116,11 @@ def process(filename):
     cf0, f0 = get_f0(filename)
     f0path = filename.replace("22k", "32k")+"f0.npy"
     np.save(f0path, cf0)
+    e = get_energy(filename)
+    assert e.shape[0] == cf0.shape[0]
+    energy_path = filename.replace("22k", "32k")+"energy.npy"
+    np.save(energy_path, e)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
