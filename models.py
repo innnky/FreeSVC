@@ -11,7 +11,7 @@ import modules
 from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 from commons import init_weights, get_padding
-from vdecoder.hifigan.hifigan import HifiGanGenerator
+from vdecoder.hifigan.models import Generator
 
 
 class ResidualCouplingBlock(nn.Module):
@@ -138,60 +138,6 @@ class TextEncoder(nn.Module):
 
     return z, m, logs, x_mask
 
-
-class Generator(torch.nn.Module):
-    def __init__(self, initial_channel, resblock, resblock_kernel_sizes, resblock_dilation_sizes, upsample_rates, upsample_initial_channel, upsample_kernel_sizes, gin_channels=0):
-        super(Generator, self).__init__()
-        self.num_kernels = len(resblock_kernel_sizes)
-        self.num_upsamples = len(upsample_rates)
-        self.conv_pre = Conv1d(initial_channel, upsample_initial_channel, 7, 1, padding=3)
-        resblock = modules.ResBlock1 if resblock == '1' else modules.ResBlock2
-
-        self.ups = nn.ModuleList()
-        for i, (u, k) in enumerate(zip(upsample_rates, upsample_kernel_sizes)):
-            self.ups.append(weight_norm(
-                ConvTranspose1d(upsample_initial_channel//(2**i), upsample_initial_channel//(2**(i+1)),
-                                k, u, padding=(k-u)//2)))
-
-        self.resblocks = nn.ModuleList()
-        for i in range(len(self.ups)):
-            ch = upsample_initial_channel//(2**(i+1))
-            for j, (k, d) in enumerate(zip(resblock_kernel_sizes, resblock_dilation_sizes)):
-                self.resblocks.append(resblock(ch, k, d))
-
-        self.conv_post = Conv1d(ch, 1, 7, 1, padding=3, bias=False)
-        self.ups.apply(init_weights)
-
-        if gin_channels != 0:
-            self.cond = nn.Conv1d(gin_channels, upsample_initial_channel, 1)
-
-    def forward(self, x, g=None):
-        x = self.conv_pre(x)
-        if g is not None:
-          x = x + self.cond(g)
-
-        for i in range(self.num_upsamples):
-            x = F.leaky_relu(x, modules.LRELU_SLOPE)
-            x = self.ups[i](x)
-            xs = None
-            for j in range(self.num_kernels):
-                if xs is None:
-                    xs = self.resblocks[i*self.num_kernels+j](x)
-                else:
-                    xs += self.resblocks[i*self.num_kernels+j](x)
-            x = xs / self.num_kernels
-        x = F.leaky_relu(x)
-        x = self.conv_post(x)
-        x = torch.tanh(x)
-
-        return x
-
-    def remove_weight_norm(self):
-        print('Removing weight norm...')
-        for l in self.ups:
-            remove_weight_norm(l)
-        for l in self.resblocks:
-            l.remove_weight_norm()
 
 
 class DiscriminatorP(torch.nn.Module):
@@ -373,18 +319,17 @@ class SynthesizerTrn(nn.Module):
 
     self.enc_p_ = TextEncoder(ssl_dim, inter_channels, hidden_channels, 5, 1, 16,0, filter_channels, n_heads, p_dropout)
     hps = {
-        "resblock_kernel_sizes": resblock_kernel_sizes,
-        "inter_channels": inter_channels,
-        "upsample_rates": upsample_rates,
-        "upsample_kernel_sizes": upsample_kernel_sizes,
-        "upsample_initial_channel": upsample_initial_channel,
-        "use_pitch_embed": True,
-        "audio_sample_rate": 32000,
+        "sampling_rate": 32000,
+        "inter_channels": 192,
         "resblock": "1",
-        "resblock_dilation_sizes": resblock_dilation_sizes,
-        "gin_channels": gin_channels
+        "resblock_kernel_sizes": [3, 7, 11],
+        "resblock_dilation_sizes": [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+        "upsample_rates": [10, 8, 2, 2],
+        "upsample_initial_channel": 512,
+        "upsample_kernel_sizes": [16, 16, 4, 4],
+        "gin_channels": 256,
     }
-    self.dec = HifiGanGenerator(h=hps)
+    self.dec = Generator(h=hps)
     self.enc_q = Encoder(spec_channels, inter_channels, hidden_channels, 5, 1, 16, gin_channels=gin_channels)
     self.flow = ResidualCouplingBlock(inter_channels, hidden_channels, 5, 1, 4, gin_channels=gin_channels)
 
