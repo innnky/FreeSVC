@@ -116,12 +116,22 @@ class TextEncoder(nn.Module):
         n_layers,
         kernel_size,
         p_dropout)
+    self.enc_p =  attentions.Encoder(
+        hidden_channels,
+        filter_channels,
+        n_heads,
+        4,
+        kernel_size,
+        p_dropout)
 
   def forward(self, x, x_lengths, f0=None,energy=None):
     x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
     x = self.pre(x) * x_mask
-    x = x + self.f0_emb(f0).transpose(1,2) + self.energy_emb(torch.bucketize(energy, self.energy_bins)).transpose(1, 2)
     x = self.enc_(x * x_mask, x_mask)
+    x = x + self.f0_emb(f0).transpose(1,2) + self.energy_emb(torch.bucketize(energy, self.energy_bins)).transpose(1, 2)
+    x = self.enc_p(x * x_mask, x_mask)
+
+
     stats = self.proj(x) * x_mask
     m, logs = torch.split(stats, self.out_channels, dim=1)
     z = (m + torch.randn_like(m) * torch.exp(logs)) * x_mask
