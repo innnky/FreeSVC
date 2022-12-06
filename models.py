@@ -317,12 +317,8 @@ class SynthesizerTrn(nn.Module):
     self.dec = Generator(h=hps)
     self.enc_q = Encoder(spec_channels, inter_channels, hidden_channels, 5, 1, 16, gin_channels=gin_channels)
     self.flow = ResidualCouplingBlock(inter_channels, hidden_channels, 5, 1, 4, gin_channels=gin_channels)
-    self.slice = [i for i in range(0, 384, 3)]
 
   def forward(self, c, f0, spec, g=None, mel=None, c_lengths=None, spec_lengths=None):
-
-    c = c[:,:,self.slice]
-    f0_slice = f0[:,self.slice]
     if c_lengths == None:
       c_lengths = (torch.ones(c.size(0)) * c.size(-1)).to(c.device)
     if spec_lengths == None:
@@ -330,10 +326,7 @@ class SynthesizerTrn(nn.Module):
 
     g = self.emb_g(g).transpose(1,2)
 
-    _, m_p, logs_p, _ = self.enc_p_(c, c_lengths, f0=f0_to_coarse(f0_slice))
-    m_p = torch.repeat_interleave(m_p, repeats=3, dim=2)
-    logs_p = torch.repeat_interleave(logs_p, repeats=3, dim=2)
-
+    z_ptemp, m_p, logs_p, _ = self.enc_p_(c, c_lengths, f0=f0_to_coarse(f0))
     z, m_q, logs_q, spec_mask = self.enc_q(spec, spec_lengths, g=g) 
 
     z_p = self.flow(z, spec_mask, g=g)
