@@ -14,8 +14,6 @@ import torch
 import torchvision
 from torch.nn import functional as F
 from commons import sequence_mask
-import hifigan
-from wavlm import WavLM, WavLMConfig
 import hubert_model
 MATPLOTLIB_FLAG = False
 
@@ -60,19 +58,6 @@ def get_hubert_content(hmodel, y=None, path=None):
     units = hmodel.units(source)
     return units.transpose(1,2)
 
-def get_cmodel(rank):
-    if rank is None:
-      checkpoint = torch.load('wavlm/WavLM-Large.pt',map_location="cpu")
-      cfg = WavLMConfig(checkpoint['cfg'])
-      cmodel = WavLM(cfg)
-    else:
-      checkpoint = torch.load('wavlm/WavLM-Large.pt')
-      cfg = WavLMConfig(checkpoint['cfg'])
-      cmodel = WavLM(cfg).cuda(rank)
-    cmodel.load_state_dict(checkpoint['model'])
-    cmodel.eval()
-    return cmodel
-
 
 def get_content(cmodel, y):
     with torch.no_grad():
@@ -80,18 +65,6 @@ def get_content(cmodel, y):
     c = c.transpose(1, 2)
     return c
 
-
-def get_vocoder(rank):
-    with open("hifigan/config.json", "r") as f:
-        config = json.load(f)
-    config = hifigan.AttrDict(config)
-    vocoder = hifigan.Generator(config)
-    ckpt = torch.load("hifigan/generator_v1")
-    vocoder.load_state_dict(ckpt["generator"])
-    vocoder.eval()
-    vocoder.remove_weight_norm()
-    vocoder.cuda(rank)
-    return vocoder
 
 
 def transform(mel, height): # 68-92
@@ -359,12 +332,3 @@ class HParams():
   def __repr__(self):
     return self.__dict__.__repr__()
 
-if __name__ == '__main__':
-  h = get_hubert_model()
-  audio,sr =librosa.load("/Volumes/Extend/下载/p237_004-1.wav", 16000)
-  wav = torch.from_numpy(audio).unsqueeze(0)
-  print(get_hubert_content(h, wav).shape)
-  h = get_cmodel(None)
-  audio,sr =librosa.load("/Volumes/Extend/下载/p237_004-1.wav", 16000)
-  wav = torch.from_numpy(audio).unsqueeze(0)
-  print(get_content(h, wav).shape)

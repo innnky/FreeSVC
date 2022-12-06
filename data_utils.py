@@ -56,27 +56,11 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
 
         spk = filename.split("/")[-2]
         spk = torch.LongTensor([self.spk_map[spk]])
-        if not self.use_sr:
-            c_filename = filename.replace(".wav", ".pt")
-            c_filename = c_filename.replace("dataset/32k", "dataset/wavlm")
-            c = torch.load(c_filename).squeeze(0)
-        else:
-            i = 68 + 4 * random.randint(0, 6)
 
-            '''
-            basename = os.path.basename(filename)[:-4]
-            spkname = basename[:4]
-            #print(basename, spkname)
-            with h5py.File(f"dataset/rs/wavlm/{spkname}/{i}.hdf5","r") as f:
-                c = torch.from_numpy(f[basename][()]).squeeze(0)
-            #print(c)
-            '''
-            c_filename = filename.replace(".wav", f"_{i}.pt")
-            c_filename = c_filename.replace("dataset/32k", "dataset/sr/wavlm")
-            c = torch.load(c_filename).squeeze(0)
-        c = torch.repeat_interleave(c, repeats=2, dim=1)
+        c = torch.load(filename + ".soft.pt").squeeze(0)
+        c = torch.repeat_interleave(c, repeats=3, dim=1)
 
-        f0 = np.load(filename + "f0.npy")
+        f0 = np.load(filename + ".f0.npy")
         f0 = torch.FloatTensor(f0)
         lmin = min(c.size(-1), spec.size(-1), f0.shape[0])
         assert abs(c.size(-1) - spec.size(-1)) < 4, (c.size(-1), spec.size(-1), f0.shape, filename)
@@ -146,30 +130,15 @@ class EvalDataLoader(torch.utils.data.Dataset):
         spk = filename.split("/")[-2]
         spk = torch.LongTensor([self.spk_map[spk]])
 
-        if not self.use_sr:
-            c_filename = filename.replace(".wav", ".pt")
-            c_filename = c_filename.replace("dataset/32k", "dataset/wavlm")
-            c = torch.load(c_filename).squeeze(0)
-        else:
-            i = 68 + 4 * random.randint(0, 6)
+        c = torch.load(filename + ".soft.pt").squeeze(0)
 
-            '''
-            basename = os.path.basename(filename)[:-4]
-            spkname = basename[:4]
-            #print(basename, spkname)
-            with h5py.File(f"dataset/rs/wavlm/{spkname}/{i}.hdf5","r") as f:
-                c = torch.from_numpy(f[basename][()]).squeeze(0)
-            #print(c)
-            '''
-            c_filename = filename.replace(".wav", f"_{i}.pt")
-            c_filename = c_filename.replace("dataset/32k", "dataset/sr/wavlm")
-            c = torch.load(c_filename).squeeze(0)
-        c = torch.repeat_interleave(c, repeats=2, dim=1)
+        c = torch.repeat_interleave(c, repeats=3, dim=1)
 
-        f0 = np.load(filename + "f0.npy")
+        f0 = np.load(filename + ".f0.npy")
         f0 = torch.FloatTensor(f0)
         lmin = min(c.size(-1), spec.size(-1), f0.shape[0])
         assert abs(c.size(-1) - spec.size(-1)) < 4, (c.size(-1), spec.size(-1), f0.shape)
+        assert abs(f0.shape[0] - spec.shape[-1]) < 4, (c.size(-1), spec.size(-1), f0.shape)
         spec, c, f0 = spec[:, :lmin], c[:, :lmin], f0[:lmin]
         audio_norm = audio_norm[:, :lmin * self.hop_length]
 

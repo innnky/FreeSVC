@@ -1,3 +1,5 @@
+import logging
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 import os
 import json
 import argparse
@@ -206,11 +208,18 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
                     "slice/mel_gen": utils.plot_spectrogram_to_numpy(y_hat_mel[0].data.cpu().numpy()),
                     "all/mel": utils.plot_spectrogram_to_numpy(mel[0].data.cpu().numpy()),
                 }
+                audio_dict={
+                    f"train/gen": y_hat[0],
+                    f"train/gt": y[0],
+                }
                 utils.summarize(
                     writer=writer,
                     global_step=global_step,
                     images=image_dict,
-                    scalars=scalar_dict)
+                    scalars=scalar_dict,
+                    audios=audio_dict,
+                    audio_sampling_rate = hps.data.sampling_rate
+                )
 
             if global_step % hps.train.eval_interval == 0:
                 evaluate(hps, net_g, eval_loader, writer_eval)
@@ -242,27 +251,23 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                 hps.data.sampling_rate,
                 hps.data.mel_fmin,
                 hps.data.mel_fmax)
-            _f0 = f0.clone()
-            for shift in [0]:
-                f0 = _f0.clone()
-                f0[f0 != 1] += shift
-                y_hat = generator.module.infer(c, f0, g=g, mel=mel)
+            y_hat = generator.module.infer(c, f0, g=g, mel=mel)
 
-                y_hat_mel = mel_spectrogram_torch(
-                    y_hat.squeeze(1).float(),
-                    hps.data.filter_length,
-                    hps.data.n_mel_channels,
-                    hps.data.sampling_rate,
-                    hps.data.hop_length,
-                    hps.data.win_length,
-                    hps.data.mel_fmin,
-                    hps.data.mel_fmax
-                )
+            y_hat_mel = mel_spectrogram_torch(
+                y_hat.squeeze(1).float(),
+                hps.data.filter_length,
+                hps.data.n_mel_channels,
+                hps.data.sampling_rate,
+                hps.data.hop_length,
+                hps.data.win_length,
+                hps.data.mel_fmin,
+                hps.data.mel_fmax
+            )
 
-                audio_dict.update({
-                    f"gen/audio_{batch_idx}_{shift}": y_hat[0],
-                    f"gt/audio_{batch_idx}": y[0]
-                })
+            audio_dict.update({
+                f"gen/audio_{batch_idx}": y_hat[0],
+                f"gt/audio_{batch_idx}": y[0]
+            })
         image_dict.update({
             f"gen/mel": utils.plot_spectrogram_to_numpy(y_hat_mel[0].cpu().numpy()),
             "gt/mel": utils.plot_spectrogram_to_numpy(mel[0].cpu().numpy())

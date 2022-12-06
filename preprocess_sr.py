@@ -9,7 +9,6 @@ from scipy.io import wavfile
 
 import utils
 from mel_processing import mel_spectrogram_torch
-from wavlm import WavLM, WavLMConfig
 #import h5py
 import logging
 logging.getLogger('numba').setLevel(logging.WARNING)
@@ -21,7 +20,7 @@ def stft(y):
     return librosa.stft(
         y=y,
         n_fft=1280,
-        hop_length=160,
+        hop_length=320,
         win_length=1280,
     )
 
@@ -32,10 +31,10 @@ def energy(y):
     return e.squeeze()  # (Number of frames) => (654,)
 
 def get_energy(path, p_len=None):
-    wav, sr = librosa.load(path, 16000)
+    wav, sr = librosa.load(path, 48000)
     e = energy(wav)
     if p_len is None:
-        p_len = wav.shape[0] // 160
+        p_len = wav.shape[0] // 320
     assert e.shape[0] -p_len <2 ,(e.shape[0] ,p_len)
     e = e[: p_len]
     return e
@@ -43,18 +42,18 @@ def get_energy(path, p_len=None):
 
 
 def get_f0(path,p_len=None, f0_up_key=0):
-    x, _ = librosa.load(path, 16000)
+    x, _ = librosa.load(path, 48000)
     if p_len is None:
-        p_len = x.shape[0]//160
+        p_len = x.shape[0]//320
     else:
-        assert abs(p_len-x.shape[0]//160) < 2, (path, p_len, x.shape)
-    time_step = 160 / 16000 * 1000
+        assert abs(p_len-x.shape[0]//320) < 3, (path, p_len, x.shape)
+    time_step = 320 / 48000 * 1000
     f0_min = 50
     f0_max = 1100
     f0_mel_min = 1127 * np.log(1 + f0_min / 700)
     f0_mel_max = 1127 * np.log(1 + f0_max / 700)
 
-    f0 = parselmouth.Sound(x, 16000).to_pitch_ac(
+    f0 = parselmouth.Sound(x, 48000).to_pitch_ac(
         time_step=time_step / 1000, voicing_threshold=0.6,
         pitch_floor=f0_min, pitch_ceiling=f0_max).selected_array['frequency']
 
@@ -72,81 +71,29 @@ def get_f0(path,p_len=None, f0_up_key=0):
     return f0_coarse, f0bak
 
 def process(filename):
-    basename = os.path.basename(filename)
     print(filename)
-    speaker = filename.split("/")[-2]#basename[:4]
-    wav_dir = os.path.join(args.wav_dir, speaker)
-    ssl_dir = os.path.join(args.ssl_dir, speaker)
-    os.makedirs(wav_dir, exist_ok=True)
-    os.makedirs(ssl_dir, exist_ok=True)
-    wav, _ = librosa.load(filename, sr=hps.sampling_rate)
-    wav = torch.from_numpy(wav).unsqueeze(0).cuda()
-    mel = mel_spectrogram_torch(
-        wav, 
-        hps.n_fft, 
-        hps.num_mels, 
-        hps.sampling_rate, 
-        hps.hop_size, 
-        hps.win_size, 
-        hps.fmin, 
-        hps.fmax
-    )
-    '''
-    f = {}
-    for i in range(args.min, args.max+1):
-        fpath = os.path.join(ssl_dir, f"{i}.hdf5")
-        f[i] = h5py.File(fpath, "a")
-    '''
-    for i in range(68, 92+1, 4):
-        mel_rs = utils.transform(mel, i)
-        wav_rs = vocoder(mel_rs)[0][0].detach().cpu().numpy()
-        _wav_rs = librosa.resample(wav_rs, orig_sr=hps.sampling_rate, target_sr=args.sr)
-        wav_rs = torch.from_numpy(_wav_rs).cuda().unsqueeze(0)
-        c = utils.get_hubert_content(hmodel, wav_rs)
-        ssl_path = os.path.join(ssl_dir, basename.replace(".wav", f"_{i}.pt"))
-        torch.save(c.cpu(), ssl_path)
-        #print(wav_rs.size(), c.size())
-        # wav_path = os.path.join(wav_dir, basename.replace(".wav", f"_{i}.wav"))
-        # wavfile.write(
-        #         wav_path,
-        #         args.sr,
-        #         _wav_rs
-        # )
+    devive = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    wav, _ = librosa.load(filename, sr=args.sr)
+    wav = torch.from_numpy(wav).unsqueeze(0).to(devive)
+    c = utils.get_hubert_content(hmodel, wav)
+    save_name = filename.replace("16k", "48k")+".soft.pt"
+    torch.save(c.cpu(), save_name)
 
-    cf0, f0 = get_f0(filename)
-    f0path = filename.replace("22k", "32k")+"f0.npy"
+    cf0, f0 = get_f0(filename.replace("16k", "48k"), c.shape[-1] * 3)
+    f0path = filename.replace("16k", "48k")+".f0.npy"
     np.save(f0path, f0)
-    e = get_energy(filename)
-    assert e.shape[0] == cf0.shape[0]
-    energy_path = filename.replace("22k", "32k")+"energy.npy"
-    np.save(energy_path, e)
+
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--sr", type=int, default=16000, help="sampling rate")
-    parser.add_argument("--min", type=int, default=68, help="min")
-    parser.add_argument("--max", type=int, default=92, help="max")
-    parser.add_argument("--config", type=str, default="hifigan/config.json", help="path to config file")
-    parser.add_argument("--in_dir", type=str, default="dataset/22k", help="path to input dir")
-    parser.add_argument("--wav_dir", type=str, default="dataset/sr/wav", help="path to output wav dir")
-    parser.add_argument("--ssl_dir", type=str, default="dataset/sr/wavlm", help="path to output ssl dir")
+    parser.add_argument("--in_dir", type=str, default="dataset/16k", help="path to input dir")
     args = parser.parse_args()
 
-    print("Loading WavLM for content...")
-    hmodel = utils.get_hubert_model(0)
-    print("Loaded WavLM.")
-
-    print("Loading vocoder...")
-    vocoder = utils.get_vocoder(0)
-    vocoder.eval()
-    print("Loaded vocoder.")
-    
-    config_path = args.config
-    with open(config_path, "r") as f:
-        data = f.read()
-    config = json.loads(data)
-    hps = utils.HParams(**config)
+    print("Loading hubert for content...")
+    hmodel = utils.get_hubert_model(0 if torch.cuda.is_available() else None)
+    print("Loaded hubert.")
 
     filenames = glob(f'{args.in_dir}/*/*.wav', recursive=True)#[:10]
     
