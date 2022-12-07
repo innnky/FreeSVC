@@ -106,7 +106,7 @@ class EvalDataLoader(torch.utils.data.Dataset):
         self.win_length = hparams.data.win_length
         self.sampling_rate = hparams.data.sampling_rate
         self.use_sr = hparams.train.use_sr
-        self.audiopaths = self.audiopaths[:5]
+        self.audiopaths = self.audiopaths[:10]
         self.spk_map = hparams.spk
 
 

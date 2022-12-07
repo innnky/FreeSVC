@@ -4,6 +4,8 @@ import argparse
 import torch
 import json
 from glob import glob
+
+from pyworld import pyworld
 from tqdm import tqdm
 from scipy.io import wavfile
 
@@ -70,25 +72,50 @@ def get_f0(path,p_len=None, f0_up_key=0):
     f0_coarse = np.rint(f0_mel).astype(np.int)
     return f0_coarse, f0bak
 
+def resize2d(x, target_len):
+    source = np.array(x)
+    source[source<0.001] = np.nan
+    target = np.interp(np.arange(0, len(source)*target_len, len(source))/ target_len, np.arange(0, len(source)), source)
+    res = np.nan_to_num(target)
+    return res
+
+def compute_f0(path, c_len):
+    x, sr = librosa.load(path, sr=48000)
+    f0, t = pyworld.dio(
+        x.astype(np.double),
+        fs=sr,
+        f0_ceil=800,
+        frame_period=1000 * 320 / sr,
+    )
+    f0 = pyworld.stonemask(x.astype(np.double), f0, t, 48000)
+    for index, pitch in enumerate(f0):
+        f0[index] = round(pitch, 1)
+    assert abs(c_len - x.shape[0]//320) < 3, (c_len, f0.shape)
+
+    return None, resize2d(f0, c_len)
+
+
 def process(filename):
     print(filename)
-    devive = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    wav, _ = librosa.load(filename, sr=args.sr)
-    wav = torch.from_numpy(wav).unsqueeze(0).to(devive)
-    c = utils.get_hubert_content(hmodel, wav)
-    save_name = filename.replace("16k", "48k")+".soft.pt"
-    torch.save(c.cpu(), save_name)
-
-    cf0, f0 = get_f0(filename.replace("16k", "48k"), c.shape[-1] * 3)
-    f0path = filename.replace("16k", "48k")+".f0.npy"
-    np.save(f0path, f0)
+    save_name = filename+".soft.pt"
+    if not os.path.exists(save_name):
+        devive = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        wav, _ = librosa.load(filename, sr=16000)
+        wav = torch.from_numpy(wav).unsqueeze(0).to(devive)
+        c = utils.get_hubert_content(hmodel, wav)
+        torch.save(c.cpu(), save_name)
+    else:
+        c = torch.load(save_name)
+    f0path = filename+".f0.npy"
+    if not os.path.exists(f0path):
+        cf0, f0 = compute_f0(filename, c.shape[-1] * 3)
+        np.save(f0path, f0)
 
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sr", type=int, default=16000, help="sampling rate")
-    parser.add_argument("--in_dir", type=str, default="dataset/16k", help="path to input dir")
+    parser.add_argument("--in_dir", type=str, default="dataset/48k", help="path to input dir")
     args = parser.parse_args()
 
     print("Loading hubert for content...")
